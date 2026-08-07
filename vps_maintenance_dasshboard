@@ -1,0 +1,188 @@
+{
+  "name": "VPS Maintenance Dashboard Trigger",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "trigger-vps-maintenance",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "a9b8c7d6-e5f4-3a2b-1c0d-9e8f7a6b5c4d",
+      "name": "Webhook Trigger (Bookmark Me)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        380,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "command": "nohup /docker/maintain.sh >/dev/null 2>&1 & disown; echo \"Maintenance dispatched at $(date -u)\""
+      },
+      "id": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+      "name": "Dispatch Maintenance Script",
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        600,
+        240
+      ],
+      "credentials": {
+        "sshPrivateKeyAuth": {
+          "id": "YOUR_SSH_CREDENTIAL_ID_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 180,
+        "unit": "seconds"
+      },
+      "id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+      "name": "Wait for Maintenance to Finish",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        820,
+        240
+      ],
+      "webhookId": "d2e3f4a5-b6c7-4d8e-9f0a-1b2c3d4e5f6a"
+    },
+    {
+      "parameters": {
+        "command": "cat /var/log/vps-maintenance/last-run.log 2>/dev/null || echo \"RESULT: UNKNOWN — log file not found. Maintenance may still be running or failed to start. SSH in and check /var/log/vps-maintenance/last-run.log manually.\""
+      },
+      "id": "e4d5c6b7-a8f9-4b0c-9d1e-2f3a4b5c6d7e",
+      "name": "Read Maintenance Report",
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        240
+      ],
+      "credentials": {
+        "sshPrivateKeyAuth": {
+          "id": "YOUR_SSH_CREDENTIAL_ID_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "output-assignment",
+              "name": "status",
+              "value": "={{ $json.stdout.includes(\"RESULT: SUCCESS\") ? \"Success\" : \"Failed\" }}",
+              "type": "string"
+            },
+            {
+              "id": "log-assignment",
+              "name": "terminal_output",
+              "value": "={{ $json.stdout }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f5e4d3c2-b1a0-9f8e-7d6c-5b4a3f2e1d0c",
+      "name": "Format Summary Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        1260,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "vps@mikemurphy.ai",
+        "subject": "=VPS Maintenance Report — {{ $json.status }}",
+        "emailType": "text",
+        "message": "=VPS Maintenance Report — {{ $json.status }}\n\nTerminal Output:\n{{ $json.terminal_output }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1480,
+        240
+      ],
+      "id": "c252c7e2-b00b-4f7b-ace0-c82145b76bc5",
+      "name": "Send a message",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "sOgW4BYQ2FyBJxur",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger (Bookmark Me)": {
+      "main": [
+        [
+          {
+            "node": "Dispatch Maintenance Script",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dispatch Maintenance Script": {
+      "main": [
+        [
+          {
+            "node": "Wait for Maintenance to Finish",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Maintenance to Finish": {
+      "main": [
+        [
+          {
+            "node": "Read Maintenance Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Maintenance Report": {
+      "main": [
+        [
+          {
+            "node": "Format Summary Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Summary Output": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {}
+}

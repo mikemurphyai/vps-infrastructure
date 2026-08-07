@@ -1,0 +1,21 @@
+services:
+  ollama:
+    image: ollama/ollama:0.32.1
+    container_name: ollama
+    restart: unless-stopped
+    networks:
+      - app-net
+    ports:
+      - "${TAILSCALE_IP}:11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+
+networks:
+  app-net:
+    external: true
+
+volumes:
+  ollama_models:
+    name: ollama_models

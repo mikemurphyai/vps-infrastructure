@@ -1,0 +1,67 @@
+services:
+  directus-db:
+    image: postgres:16-alpine
+    container_name: directus-db
+    restart: unless-stopped
+    networks:
+      - app-net
+    environment:
+      POSTGRES_USER: directus
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: directus
+    volumes:
+      - directus_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U directus -d directus"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  directus:
+    image: directus/directus:12.1.1
+    container_name: directus
+    restart: unless-stopped
+    depends_on:
+      directus-db:
+        condition: service_healthy
+    networks:
+      - app-net
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.directus.rule=Host(`cms.imurph.com`)
+      - traefik.http.routers.directus.tls=true
+      - traefik.http.routers.directus.tls.certresolver=mytlschallenge
+      - traefik.http.routers.directus.entrypoints=web,websecure
+      - traefik.http.services.directus.loadbalancer.server.port=8055
+      - traefik.http.middlewares.directus-headers.headers.SSLRedirect=true
+      - traefik.http.middlewares.directus-headers.headers.STSSeconds=315360000
+      - traefik.http.middlewares.directus-headers.headers.browserXSSFilter=true
+      - traefik.http.middlewares.directus-headers.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.directus-headers.headers.forceSTSHeader=true
+      - traefik.http.middlewares.directus-headers.headers.STSIncludeSubdomains=true
+      - traefik.http.middlewares.directus-headers.headers.STSPreload=true
+      - traefik.http.routers.directus.middlewares=directus-headers@docker
+    environment:
+      DB_CLIENT: pg
+      DB_HOST: directus-db
+      DB_PORT: 5432
+      DB_DATABASE: directus
+      DB_USER: directus
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KEY: ${DIRECTUS_KEY}
+      SECRET: ${DIRECTUS_SECRET}
+      ADMIN_EMAIL: mike@mikemurphy.co
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      PUBLIC_URL: "https://cms.imurph.com"
+    volumes:
+      - directus_uploads:/directus/uploads
+
+networks:
+  app-net:
+    external: true
+
+volumes:
+  directus_db_data:
+    name: directus_db_data
+  directus_uploads:
+    name: directus_uploads

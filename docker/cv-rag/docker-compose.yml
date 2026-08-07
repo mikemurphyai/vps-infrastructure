@@ -1,0 +1,37 @@
+# Simplified docker-compose for CV-RAG Streamlit
+# Connects to existing n8n and Ollama via 'app-net' Docker network
+# n8n is accessed via Traefik at https://flow.imurph.com
+
+services:
+  # Streamlit Frontend
+  streamlit:
+    build:
+      context: ./streamlit
+      dockerfile: Dockerfile
+    container_name: cv-rag-streamlit
+    environment:
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL}
+    volumes:
+      - ./docs:/app/docs:ro
+      - ./streamlit/app.py:/app/app.py:ro
+    restart: unless-stopped
+    networks:
+      - app-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.cv-rag-chat.rule=Host(`${SUBDOMAIN}.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.cv-rag-chat.entrypoints=websecure"
+      - "traefik.http.routers.cv-rag-chat.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.cv-rag-chat.loadbalancer.server.port=${PORT}"
+      - "traefik.docker.network=app-net"
+
+networks:
+  # Connect to existing app-net network where n8n and Ollama are running
+  app-net:
+    external: true

@@ -1,0 +1,57 @@
+services:
+  shlink:
+    image: shlinkio/shlink:5.1.5
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.shlink.rule=Host(`${SUBDOMAIN}.${DOMAIN_NAME}`) || Host(`${SHORT_DOMAIN}`)
+      - traefik.http.routers.shlink.tls=true
+      - traefik.http.routers.shlink.tls.certresolver=mytlschallenge
+      - traefik.http.routers.shlink.entrypoints=web,websecure
+      - traefik.http.services.shlink.loadbalancer.server.port=8080
+      - traefik.http.middlewares.shlink-headers.headers.SSLRedirect=true
+      - traefik.http.middlewares.shlink-headers.headers.STSSeconds=315360000
+      - traefik.http.middlewares.shlink-headers.headers.browserXSSFilter=true
+      - traefik.http.middlewares.shlink-headers.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.shlink-headers.headers.forceSTSHeader=true
+      - traefik.http.middlewares.shlink-headers.headers.STSIncludeSubdomains=true
+      - traefik.http.middlewares.shlink-headers.headers.STSPreload=true
+      - traefik.http.routers.shlink.middlewares=shlink-headers@docker
+    environment:
+      - DEFAULT_DOMAIN=${SHORT_DOMAIN}
+      - IS_HTTPS_ENABLED=true
+      - DB_DRIVER=sqlite
+      - INITIAL_API_KEY=${INITIAL_API_KEY}
+    volumes:
+      - shlink_data:/etc/shlink/data
+    networks:
+      - app-net
+
+  shlink-web-client:
+    image: shlinkio/shlink-web-client:4.8.0
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.shlink-web.rule=Host(`${ADMIN_SUBDOMAIN}.${DOMAIN_NAME}`)
+      - traefik.http.routers.shlink-web.tls=true
+      - traefik.http.routers.shlink-web.tls.certresolver=mytlschallenge
+      - traefik.http.routers.shlink-web.entrypoints=web,websecure
+      - traefik.http.services.shlink-web.loadbalancer.server.port=8080
+      - traefik.http.middlewares.shlink-web-headers.headers.SSLRedirect=true
+      - traefik.http.middlewares.shlink-web-headers.headers.STSSeconds=315360000
+      - traefik.http.middlewares.shlink-web-headers.headers.browserXSSFilter=true
+      - traefik.http.middlewares.shlink-web-headers.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.shlink-web-headers.headers.forceSTSHeader=true
+      - traefik.http.middlewares.shlink-web-headers.headers.STSIncludeSubdomains=true
+      - traefik.http.middlewares.shlink-web-headers.headers.STSPreload=true
+      - traefik.http.middlewares.shlink-auth.basicauth.users=${SHLINK_HTPASSWD}
+      - traefik.http.routers.shlink-web.middlewares=shlink-web-headers@docker,shlink-auth@docker
+    networks:
+      - app-net
+
+networks:
+  app-net:
+    external: true
+
+volumes:
+  shlink_data:

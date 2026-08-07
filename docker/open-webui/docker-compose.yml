@@ -1,0 +1,21 @@
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui@sha256:a26effeb220e132482bf7e0560b3404843e7bc40d23051144e062960df8df6b0
+    container_name: open-webui
+    restart: unless-stopped
+    networks:
+      - app-net
+    ports:
+      - "${TAILSCALE_IP}:8080:8080"
+    volumes:
+      - open_webui_data:/app/backend/data
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+
+networks:
+  app-net:
+    external: true
+
+volumes:
+  open_webui_data:
+    name: open_webui_data

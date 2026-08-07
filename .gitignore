@@ -1,0 +1,8 @@
+.env
+*.env
+.DS_Store
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+known_hosts
