@@ -1,0 +1,26 @@
+services:
+  excalidraw:
+    image: excalidraw/excalidraw:latest
+    container_name: excalidraw
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${APP_NAME}.rule=Host(`${SUBDOMAIN}.${DOMAIN_NAME}`)
+      - traefik.http.routers.${APP_NAME}.tls=true
+      - traefik.http.routers.${APP_NAME}.tls.certresolver=mytlschallenge
+      - traefik.http.routers.${APP_NAME}.entrypoints=web,websecure
+      - traefik.http.services.${APP_NAME}.loadbalancer.server.port=${PORT}
+      - traefik.http.middlewares.${APP_NAME}-headers.headers.SSLRedirect=true
+      - traefik.http.middlewares.${APP_NAME}-headers.headers.STSSeconds=315360000
+      - traefik.http.middlewares.${APP_NAME}-headers.headers.browserXSSFilter=true
+      - traefik.http.middlewares.${APP_NAME}-headers.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.${APP_NAME}-headers.headers.forceSTSHeader=true
+      - traefik.http.middlewares.${APP_NAME}-headers.headers.STSIncludeSubdomains=true
+      - traefik.http.middlewares.${APP_NAME}-headers.headers.STSPreload=true
+      - traefik.http.routers.${APP_NAME}.middlewares=${APP_NAME}-headers@docker
+    networks:
+      - app-net
+
+networks:
+  app-net:
+    external: true
