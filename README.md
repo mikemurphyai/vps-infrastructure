@@ -3,8 +3,10 @@
 This repository is the **single source of truth** for the Infrastructure-as-Code
 configuration running on Mike Murphy's Hostinger VPS (`hostinger-vps`,
 `<VPS_PUBLIC_IP>`). Every service on the box is defined as a Docker Compose
-stack under `docker/`, fronted by Traefik, and kept in sync here so the live
-server state is always reproducible from version control.
+stack under `docker/`. Public services are fronted by Traefik; private
+services remain on the shared Docker network or a Tailscale-only binding.
+The tracked configuration is kept in sync here so the live server state is
+reproducible from version control.
 
 If it runs on the VPS, its `docker-compose.yml` should live here. If it lives
 here but isn't deployed yet, treat it as a documented-but-pending service.
@@ -18,6 +20,9 @@ here but isn't deployed yet, treat it as a documented-but-pending service.
   routes all public subdomains under `imurph.com`.
 - **Shared network:** every service joins the external Docker network
   `app-net` so containers can resolve each other by container name.
+- **n8n AI Assistant:** n8n uses an internal, self-hosted sandbox for code
+  execution and an internal SearXNG instance for web search. Neither service
+  publishes a host port; n8n reaches both by Docker DNS over `app-net`.
 - **Public vs. internal:** public services get Traefik labels and a
   `*.imurph.com` subdomain; internal-only services (e.g. Ollama) are
   reachable only on `app-net` or bound to the host's Tailscale IP
@@ -32,7 +37,8 @@ here but isn't deployed yet, treat it as a documented-but-pending service.
   Cloudflare-proxied, so legitimate traffic is unaffected — this only closes
   the side door.
 - **Secrets:** each service directory has its own `.env` (gitignored) —
-  never committed. Only compose files, Caddyfiles, and scripts are tracked.
+  never committed. Compose files, scripts, and non-secret configuration such
+  as `searxng-settings.yml` are tracked.
 
 ---
 
@@ -52,6 +58,11 @@ vps-infrastructure/
     ├── n8n/
     │   ├── docker-compose.yml
     │   └── backup_n8n.sh         # n8n_data volume backup (local + offsite via rclone → NAS, see §7)
+    ├── n8n-sandbox/
+    │   └── docker-compose.yml    # Internal n8n AI Assistant sandbox API + Docker-in-Docker runner
+    ├── searxng/
+    │   ├── docker-compose.yml    # Internal search backend for the n8n AI Assistant
+    │   └── searxng-settings.yml  # Enables the JSON response format required by n8n
     ├── obsidian/
     │   ├── docker-compose.yml
     │   └── backup_obsidian.sh    # obsidian_obsidian_data volume backup (local + offsite via rclone → NAS)
@@ -64,6 +75,8 @@ vps-infrastructure/
     ├── directus/
     │   ├── docker-compose.yml
     │   └── backup_directus.sh    # pg_dump + uploads tar (local + offsite via rclone → NAS)
+    ├── excalidraw/
+    │   └── docker-compose.yml    # Excalidraw whiteboard
     ├── shlink/
     │   ├── docker-compose.yml    # shlink + shlink-web-client
     │   └── backup_shlink.sh      # shlink_shlink_data volume backup (local + offsite via rclone → NAS)
@@ -85,7 +98,11 @@ Traefik and never bind a host port directly.
 | Ollama | `<TAILSCALE_IP>:11434` | 11434 | Tailscale-only (locked down from `0.0.0.0`, see §7) |
 | Open WebUI | `<TAILSCALE_IP>:8080` | 8080 | Tailscale-only (locked down from `0.0.0.0`, see §7) |
 | Directus | — (Traefik only) | 8055 | Public via `cms.imurph.com` (2026-07-22, was Tailscale-only) |
+| Excalidraw | — (Traefik only) | 80 | Public via `${SUBDOMAIN}.${DOMAIN_NAME}` |
 | n8n | — (Traefik only) | 5678 | Public via `flow.imurph.com` |
+| n8n Sandbox API | — (internal only) | 8080, 9090 | `app-net` only, no host binding |
+| n8n Sandbox Runner | — (internal only) | 8080, 9091 | `app-net` only, privileged Docker-in-Docker |
+| SearXNG | — (internal only) | 8080 | `app-net` only, no host binding |
 | Obsidian | — (Traefik only) | 3000 | Public via `obs.imurph.com` |
 | cv-rag Streamlit | — (Traefik only) | 8501 | Public via `chat.imurph.com` |
 | Shlink | — (Traefik only) | 8080 | Public via `${SUBDOMAIN}.imurph.com` + short domain |
@@ -99,6 +116,48 @@ Traefik and never bind a host port directly.
 > `cms.imurph.com` so the Astro site and other API consumers can reach it
 > without Tailscale workarounds. Its protection is credentials + 2FA at the
 > app layer and Cloudflare-only ingress at the network layer.
+
+### n8n AI Assistant services
+
+The AI Assistant depends on two private stacks. Both are attached to
+`app-net`, and neither has a `ports:` mapping or Traefik labels.
+
+| Component | Internal URL | Authentication | Purpose |
+|---|---|---|---|
+| Sandbox API | `http://sandbox-api:8080` | API key from `/docker/n8n-sandbox/.env` | Accepts code-execution requests from n8n |
+| Sandbox runner | `http://sandbox-runner-1:8080` | Mutual TLS plus runner credentials | Runs isolated workloads inside privileged Docker-in-Docker |
+| SearXNG | `http://searxng:8080` | No n8n API key required | Provides web search through its JSON API |
+
+The sandbox stack contains three Compose services:
+
+- `sandbox-certs` runs once to generate the mutual-TLS certificates.
+- `sandbox-api` is the control plane n8n connects to.
+- `sandbox-runner-1` is the privileged Docker-in-Docker worker.
+
+Sandbox credentials are generated only on the VPS in
+`/docker/n8n-sandbox/.env`. SearXNG's private server secret lives in
+`/docker/searxng/.env`; it is not the API key requested by n8n. The SearXNG
+credential in n8n needs only the API URL `http://searxng:8080`, and
+`docker/n8n/docker-compose.yml` also supplies that URL through
+`N8N_INSTANCE_AI_SEARXNG_URL`.
+
+From the VPS, verify both services from the same network context n8n uses:
+
+```bash
+docker exec n8n-n8n-1 wget -qO- http://sandbox-api:8080/healthz
+docker exec n8n-n8n-1 wget -qO- 'http://searxng:8080/search?q=n8n&format=json'
+```
+
+The expected sandbox response is `{"status":"ok"}`. The SearXNG response
+should be JSON containing a non-empty `results` array. Individual upstream
+search engines may occasionally return rate-limit or CAPTCHA errors; SearXNG
+continues using the engines that remain available.
+
+> `sandbox-runner-1` runs with `privileged: true`. Treat it as equivalent to
+> root access on the host and never expose it publicly. n8n currently
+> positions its self-hosted sandbox for development and testing and recommends
+> Daytona for production workloads; see the
+> [n8n AI Assistant setup guide](https://docs.n8n.io/deploy/host-n8n/configure-n8n/set-up-ai-assistant).
 
 ---
 
@@ -114,16 +173,18 @@ mostly just the compose file + `.env`).
 | Traefik | `traefik_data` (external) | `/letsencrypt` | ACME certs |
 | n8n | `n8n_data` (external) | `/home/node/.n8n` | Workflows, credentials, DB — backed up by `backup_n8n.sh` |
 | n8n | bind mount `/local-files` | `/files` | Host-shared files dir |
+| n8n Sandbox | `n8n-sandbox_sandbox-tls` (compose-managed) | `/tls` | Mutual-TLS certificates for the sandbox API and runner |
 | Obsidian | `obsidian_data` (compose-managed) | `/config` | Vault + app config |
 | Ollama | `ollama_models` (external) | `/root/.ollama` | Pulled model weights |
 | Open WebUI | `open_webui_data` (external) | `/app/backend/data` | Chat history, users |
 | Directus | `directus_db_data` (external) | `/var/lib/postgresql/data` | Postgres data dir |
 | Directus | `directus_uploads` (external) | `/directus/uploads` | User-uploaded assets |
 | Shlink | `shlink_data` (compose-managed) | `/etc/shlink/data` | SQLite DB, short-URL data |
+| Uptime Kuma | `uptime-kuma_data` (explicit name) | `/app/data` | Monitors, status history, and notification settings |
 
 All volumes live under Docker's default storage location on the host
-(`/var/lib/docker/volumes/`). Directory names above map 1:1 to `docker volume
-ls` output.
+(`/var/lib/docker/volumes/`). Explicit volume names map directly to
+`docker volume ls`; Compose-managed volumes receive a project-name prefix.
 
 ---
 
@@ -138,9 +199,8 @@ What it does, in order:
 
 1. **OS update** — `apt-get update && upgrade -y && autoremove -y`
 2. **Every docker-compose stack** — loops over every `/docker/*/docker-compose.yml`
-   it finds (8 services: cv-rag, directus, n8n, obsidian, ollama, open-webui,
-   shlink, traefik), running `docker compose pull && docker compose up -d` in
-   each. No stack is special-cased or hardcoded — add a new service
+   it finds, running `docker compose pull && docker compose up -d` in each.
+   No stack is special-cased or hardcoded — add a new service
    directory and the next run picks it up automatically.
 3. **Image cleanup** — `docker image prune -f`
 
@@ -175,7 +235,7 @@ runs in three stages:
    detached before it runs, n8n restarting itself partway through no longer
    matters; the script is already an independent process on the host by then.
 2. **Wait** (`Wait for Maintenance to Finish`) — a plain 180-second delay,
-   long enough for a full OS + 9-service update to finish.
+   long enough for the full OS and Docker stack update to finish.
 3. **Read back** (`Read Maintenance Report`, SSH node) — a brand-new SSH
    connection (n8n is back up by now) that just runs `cat
    /var/log/vps-maintenance/last-run.log` and returns the completed report.
@@ -350,9 +410,9 @@ they come up. Roughly ordered by priority within each group.
 
 ### Backups
 
-All four active services (n8n, Directus, Obsidian, Shlink) have automated
-local backups via staggered nightly cron, each now also synced offsite to
-Mike's NAS over Tailscale (see below).
+Four stateful application services (n8n, Directus, Obsidian, Shlink) have
+automated local backups via staggered nightly cron, each now also synced
+offsite to Mike's NAS over Tailscale (see below).
 
 - [x] **Directus** — added `docker/directus/backup_directus.sh`: `pg_dump`
       of `directus_db_data` via `docker exec directus-db pg_dump`, plus a
@@ -472,7 +532,7 @@ on the VPS:
       no behavior changed today — future upgrades now require deliberately
       editing the tag:
       - Ollama: `:latest` → `:0.32.1`
-      - n8n: untagged (=`:latest`) → `:2.30.7`
+      - n8n: untagged (=`:latest`) → `:2.35.7`
       - Obsidian: `:latest` → `:v1.12.7-ls138`
       - Shlink: `:stable` → `:5.1.5`, Shlink Web Client: `:stable` → `:4.8.0`
       - Open WebUI: `:main` → pinned by **digest**
@@ -481,6 +541,8 @@ on the VPS:
       - Directus: `:12` → `:12.1.1` (2026-07-22, pinned as part of the
         `cms.imurph.com` public exposure — a floating major tag on a
         newly public service meant `maintain.sh` could silently upgrade it)
+      - n8n Sandbox API, runner, and nested sandbox image: pinned by digest
+      - SearXNG: pinned by digest
       - Not touched: Traefik/Postgres/Redis/pgvector (pinned to major
         version, lower risk, separate tier of precision).
 - [ ] Set an n8n execution-data retention policy

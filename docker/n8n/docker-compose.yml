@@ -17,6 +17,7 @@ services:
       - N8N_RUNNERS_ENABLED=true
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       - N8N_GIT_NODE_DISABLE_BARE_REPOS=true
+      - N8N_INSTANCE_AI_SEARXNG_URL=http://searxng:8080
     volumes:
       - n8n_data:/home/node/.n8n
       - /local-files:/files
