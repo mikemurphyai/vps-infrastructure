@@ -602,13 +602,15 @@ on the VPS:
       domain still returns its expected status and security headers
       post-upgrade. Traefik now pinned the same way as the other
       minor-version-pinned images (`:v3.7`, floating patch releases).
-- [ ] `docker/directus/docker-compose.yml` in this repo has drifted from
+- [x] `docker/directus/docker-compose.yml` in this repo had drifted from
       the VPS: the live version has `CORS_ENABLED`, `CORS_ORIGIN`,
       `CORS_METHODS`, `CORS_ALLOWED_HEADERS`, and three `MCP_OAUTH_*` env
       vars (per a `.bak-cors-20260727220920` on the VPS, so added
       2026-07-27) that were never synced back to this repo. Unrelated to
-      today's changes — noticed while diffing for the Traefik sync above.
-      Sync it or confirm it's intentionally not tracked.
+      the Traefik work — noticed while diffing for that sync. Synced
+      (2026-08-26); confirmed the file is now byte-identical to the live
+      version. The three `MCP_OAUTH_*` vars were already present in this
+      repo's `docker/directus/.env`, so nothing else needed updating.
 - [ ] Set an n8n execution-data retention policy
       (`EXECUTIONS_DATA_PRUNE` and related env vars) — a restart during
       setup surfaced 2,523 unfinished executions with no automatic
