@@ -9,7 +9,6 @@ services:
       - traefik.http.routers.shlink.tls.certresolver=mytlschallenge
       - traefik.http.routers.shlink.entrypoints=web,websecure
       - traefik.http.services.shlink.loadbalancer.server.port=8080
-      - traefik.http.middlewares.shlink-headers.headers.SSLRedirect=true
       - traefik.http.middlewares.shlink-headers.headers.STSSeconds=315360000
       - traefik.http.middlewares.shlink-headers.headers.browserXSSFilter=true
       - traefik.http.middlewares.shlink-headers.headers.contentTypeNosniff=true
@@ -37,7 +36,6 @@ services:
       - traefik.http.routers.shlink-web.tls.certresolver=mytlschallenge
       - traefik.http.routers.shlink-web.entrypoints=web,websecure
       - traefik.http.services.shlink-web.loadbalancer.server.port=8080
-      - traefik.http.middlewares.shlink-web-headers.headers.SSLRedirect=true
       - traefik.http.middlewares.shlink-web-headers.headers.STSSeconds=315360000
       - traefik.http.middlewares.shlink-web-headers.headers.browserXSSFilter=true
       - traefik.http.middlewares.shlink-web-headers.headers.contentTypeNosniff=true

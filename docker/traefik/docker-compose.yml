@@ -1,11 +1,12 @@
 services:
   traefik:
-    image: "traefik:v2.11"
+    image: "traefik:v3.7"
     container_name: traefik
     restart: always
     command:
       - "--api=true"
       - "--api.insecure=true"
+      - "--log.level=INFO"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=app-net"

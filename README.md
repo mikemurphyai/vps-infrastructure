@@ -522,6 +522,26 @@ on the VPS:
 - [x] Set up an alert channel — Telegram bot configured and receiving
       notifications.
       immediately instead of being discovered by accident.
+- [x] **Actually attach that alert channel to the real monitors**
+      (2026-08-26) — discovered while investigating the outage above:
+      Kuma's `n8n` monitor (a proper HTTP check hitting
+      `https://flow.imurph.com` every 60s, not just a container-alive
+      ping) had correctly flagged the 526 failures within ~30 minutes of
+      the cert expiring, but nothing ever notified anyone — it has zero
+      notification channels attached. Checked every monitor: 9 of 14
+      active ones (`n8n`, `VPS Host`, `Obsidian`, `cv-rag`, `Shlink`,
+      `Uptime Kuma` itself, `Directus`, plus `Open-WebUI` and `Ollama`)
+      had no notification wired up; only the low-signal Push
+      "Backup: X" monitors, `Shlink-Admin`, and `Excalidraw` were
+      actually connected to "My Telegram Alert". Fixed by inserting the
+      missing rows directly into Kuma's `monitor_notification` table in
+      its sqlite DB (backed up first to
+      `/docker/uptime-kuma/kuma.db.bak.<timestamp>`) for the 7 monitors
+      with a real public/internal endpoint to alert on: `n8n`,
+      `VPS Host`, `Obsidian`, `cv-rag`, `Shlink`, `Uptime Kuma`,
+      `Directus`. Left `Open-WebUI` and `Ollama` unattached — both
+      internal-only (Tailscale/container-network), no public endpoint
+      worth paging on.
 
 ### Operational hygiene
 
@@ -543,8 +563,52 @@ on the VPS:
         newly public service meant `maintain.sh` could silently upgrade it)
       - n8n Sandbox API, runner, and nested sandbox image: pinned by digest
       - SearXNG: pinned by digest
-      - Not touched: Traefik/Postgres/Redis/pgvector (pinned to major
-        version, lower risk, separate tier of precision).
+      - Not touched: Postgres/Redis/pgvector (pinned to major version,
+        lower risk, separate tier of precision).
+- [x] **Fixed a silent `flow.imurph.com` TLS outage** (2026-08-26) —
+      Cloudflare had been returning 526 ("invalid origin cert")
+      intermittently for ~17 hours before it was caught manually (see the
+      Monitoring gap below). Root cause: `acme.json` held two dead
+      certificate entries left over from before the domain moved off
+      `mikevps.com` (`n8n.mikevps.com`, `flow.mikevps.com`), each bundling
+      `flow.imurph.com` in as a co-SAN. Those domains' Cloudflare zones no
+      longer exist under the current API token, so Let's Encrypt's DNS-01
+      renewal for those bundles failed every cycle — and Traefik's SNI
+      cert matching would non-deterministically serve one of those
+      expired, poisoned certs for `flow.imurph.com` instead of its own
+      independently-issued, cleanly-renewing one. A plain container
+      restart looked like it fixed things (picked the good cert that
+      time) but didn't address the poisoning, so it silently came back.
+      Fixed by removing the two poisoned entries — plus one fully-dead,
+      unused `n8n.srv933076.hstgr.cloud` entry — directly from `acme.json`
+      on the VPS (backed up first to
+      `/docker/traefik/acme.json.bak.<timestamp>`). `flow.imurph.com` now
+      resolves to a single clean cert (valid to 2026-09-30) and should
+      self-renew normally going forward. Also checked `go.mikemurphy.ai`'s
+      cert (similarly bundled with `shlink.imurph.com`) — not at the same
+      risk, since `mikemurphy.ai`'s zone is still valid under the token.
+- [x] **Upgrade Traefik v2.11 → v3.7.11** (2026-08-26) — bundled into the
+      outage fix above while already in the reverse-proxy config. v3
+      removes the `SSLRedirect`, `SSLHost`, `SSLForceHost`,
+      `SSLTemporaryRedirect`, and `featurePolicy` options from the Headers
+      middleware (HTTPS redirect is already handled at the entrypoint
+      level via `entrypoints.web.http.redirections`, so no behavior
+      change) — removed the now-invalid `SSLRedirect=true` label from all
+      6 services that had it: n8n, Obsidian, both Shlink routers, Uptime
+      Kuma, Excalidraw, Directus. Also added `--log.level=INFO`
+      (previously defaulted to ERROR-only, which is exactly why the cert
+      poisoning above went unnoticed for weeks — nothing ever logged a
+      *successful* renewal to compare against). Verified every proxied
+      domain still returns its expected status and security headers
+      post-upgrade. Traefik now pinned the same way as the other
+      minor-version-pinned images (`:v3.7`, floating patch releases).
+- [ ] `docker/directus/docker-compose.yml` in this repo has drifted from
+      the VPS: the live version has `CORS_ENABLED`, `CORS_ORIGIN`,
+      `CORS_METHODS`, `CORS_ALLOWED_HEADERS`, and three `MCP_OAUTH_*` env
+      vars (per a `.bak-cors-20260727220920` on the VPS, so added
+      2026-07-27) that were never synced back to this repo. Unrelated to
+      today's changes — noticed while diffing for the Traefik sync above.
+      Sync it or confirm it's intentionally not tracked.
 - [ ] Set an n8n execution-data retention policy
       (`EXECUTIONS_DATA_PRUNE` and related env vars) — a restart during
       setup surfaced 2,523 unfinished executions with no automatic

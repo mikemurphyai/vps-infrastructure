@@ -33,7 +33,6 @@ services:
       - traefik.http.routers.directus.tls.certresolver=mytlschallenge
       - traefik.http.routers.directus.entrypoints=web,websecure
       - traefik.http.services.directus.loadbalancer.server.port=8055
-      - traefik.http.middlewares.directus-headers.headers.SSLRedirect=true
       - traefik.http.middlewares.directus-headers.headers.STSSeconds=315360000
       - traefik.http.middlewares.directus-headers.headers.browserXSSFilter=true
       - traefik.http.middlewares.directus-headers.headers.contentTypeNosniff=true

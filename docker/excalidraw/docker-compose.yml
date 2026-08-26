@@ -10,7 +10,6 @@ services:
       - traefik.http.routers.${APP_NAME}.tls.certresolver=mytlschallenge
       - traefik.http.routers.${APP_NAME}.entrypoints=web,websecure
       - traefik.http.services.${APP_NAME}.loadbalancer.server.port=${PORT}
-      - traefik.http.middlewares.${APP_NAME}-headers.headers.SSLRedirect=true
       - traefik.http.middlewares.${APP_NAME}-headers.headers.STSSeconds=315360000
       - traefik.http.middlewares.${APP_NAME}-headers.headers.browserXSSFilter=true
       - traefik.http.middlewares.${APP_NAME}-headers.headers.contentTypeNosniff=true
