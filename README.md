@@ -80,6 +80,10 @@ vps-infrastructure/
     ├── shlink/
     │   ├── docker-compose.yml    # shlink + shlink-web-client
     │   └── backup_shlink.sh      # shlink_shlink_data volume backup (local + offsite via rclone → NAS)
+    ├── podcast-rss/
+    │   ├── docker-compose.yml    # Podcast Asset Finder web app
+    │   ├── .env.example
+    │   └── README.md             # Deployment and rollback runbook
     └── uptime_kuma/
         └── docker-compose.yml    # live at uptime.imurph.com (see §7 Monitoring)
 ```
@@ -107,6 +111,7 @@ Traefik and never bind a host port directly.
 | cv-rag Streamlit | — (Traefik only) | 8501 | Public via `chat.imurph.com` |
 | Shlink | — (Traefik only) | 8080 | Public via `${SUBDOMAIN}.imurph.com` + short domain |
 | Shlink Web Client | — (Traefik only) | 8080 | Public via `${ADMIN_SUBDOMAIN}.imurph.com` (basic auth) |
+| Podcast Asset Finder | — (Traefik only) | 8000 | `podfiles.imurph.com` via Cloudflare Access |
 | Uptime Kuma | — (Traefik only) | 3001 | Public via `uptime.imurph.com` |
 | Directus DB | — (internal only) | 5432 | `app-net` only, no host binding |
 
@@ -158,6 +163,24 @@ continues using the engines that remain available.
 > positions its self-hosted sandbox for development and testing and recommends
 > Daytona for production workloads; see the
 > [n8n AI Assistant setup guide](https://docs.n8n.io/deploy/host-n8n/configure-n8n/set-up-ai-assistant).
+
+### Podcast Asset Finder
+
+Podcast Asset Finder is the browser interface from the separate `podcast-rss`
+application repository. It runs at `https://podfiles.imurph.com` and gives the
+creative team a non-Terminal workflow for finding RSS feeds, show artwork,
+episode audio, and publisher-provided transcripts.
+
+Cloudflare Access is the identity boundary. Its reusable allow policy contains
+the approved work-email addresses and uses one-time PIN authentication with a
+one-week session. The app has no user database or password middleware. Do not
+copy the email allowlist into this repository; membership is managed in the
+Cloudflare dashboard.
+
+Traefik routes HTTPS traffic to port 8000 over `app-net`; the service publishes
+no host port. The container runs as a non-root user with a read-only filesystem,
+has no persistent data, and exposes `/healthz`. See
+`docker/podcast-rss/README.md` for deployment, verification, and rollback.
 
 ---
 
@@ -390,6 +413,12 @@ they come up. Roughly ordered by priority within each group.
       listener was pure scanner surface. Verified: direct-to-IP requests
       time out on 80 and 443, all `*.imurph.com` services fine, SSH
       untouched.
+- [x] **Protect Podcast Asset Finder with Cloudflare Access** (2026-09-02) —
+      `podfiles.imurph.com` uses an exact email allowlist, one-time PIN login,
+      and a one-week session. Removed the temporary Traefik BasicAuth
+      middleware after confirming both anonymous redirects and authenticated
+      app access. The app publishes no host port and remains reachable only
+      through Cloudflare and Traefik.
 - [ ] Enable Cloudflare **Bot Fight Mode** (dashboard: Security → Bots) —
       now that the origin only accepts Cloudflare traffic, CF-level bot
       filtering is mandatory for bots, not optional. Won't affect API

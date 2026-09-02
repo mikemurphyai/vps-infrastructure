@@ -1,0 +1,34 @@
+services:
+  podcast-rss:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    image: podcast-rss:0.1.0
+    pull_policy: never
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - app-net
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=app-net
+      - traefik.http.routers.${APP_NAME}.rule=Host(`${SUBDOMAIN}.${DOMAIN_NAME}`)
+      - traefik.http.routers.${APP_NAME}.entrypoints=websecure
+      - traefik.http.routers.${APP_NAME}.tls=true
+      - traefik.http.routers.${APP_NAME}.tls.certresolver=mytlschallenge
+      - traefik.http.services.${APP_NAME}.loadbalancer.server.port=${PORT}
+      - traefik.http.middlewares.${APP_NAME}-headers.headers.STSSeconds=315360000
+      - traefik.http.middlewares.${APP_NAME}-headers.headers.browserXSSFilter=true
+      - traefik.http.middlewares.${APP_NAME}-headers.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.${APP_NAME}-headers.headers.forceSTSHeader=true
+      - traefik.http.middlewares.${APP_NAME}-headers.headers.STSIncludeSubdomains=true
+      - traefik.http.middlewares.${APP_NAME}-headers.headers.STSPreload=true
+      - traefik.http.routers.${APP_NAME}.middlewares=${APP_NAME}-headers@docker
+
+networks:
+  app-net:
+    external: true
