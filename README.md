@@ -84,8 +84,10 @@ vps-infrastructure/
     │   ├── docker-compose.yml    # Podcast Asset Finder web app
     │   ├── .env.example
     │   └── README.md             # Deployment and rollback runbook
-    └── uptime_kuma/
-        └── docker-compose.yml    # live at uptime.imurph.com (see §7 Monitoring)
+    ├── uptime_kuma/
+    │   └── docker-compose.yml    # live at uptime.imurph.com (see §7 Monitoring)
+    └── yourls/
+        └── docker-compose.yml    # yourls + MySQL DB, live at yourls.imurph.com
 ```
 
 ---
@@ -112,7 +114,10 @@ Traefik and never bind a host port directly.
 | Shlink | — (Traefik only) | 8080 | Public via `${SUBDOMAIN}.imurph.com` + short domain |
 | Shlink Web Client | — (Traefik only) | 8080 | Public via `${ADMIN_SUBDOMAIN}.imurph.com` (basic auth) |
 | Podcast Asset Finder | — (Traefik only) | 8000 | `podfiles.imurph.com` via Cloudflare Access |
+| How-To Pilot | — (Traefik only) | 80 | `howto.imurph.com` via Cloudflare Access; see `docker/howto/README.md` |
 | Uptime Kuma | — (Traefik only) | 3001 | Public via `uptime.imurph.com` |
+| YOURLS | — (Traefik only) | 80 | Public via `yourls.imurph.com` |
+| YOURLS DB (MySQL) | — (internal only) | 3306 | `app-net` only, no host binding |
 | Directus DB | — (internal only) | 5432 | `app-net` only, no host binding |
 
 > All host bindings are now either Traefik (Cloudflare-gated) or the
@@ -204,6 +209,7 @@ mostly just the compose file + `.env`).
 | Directus | `directus_uploads` (external) | `/directus/uploads` | User-uploaded assets |
 | Shlink | `shlink_data` (compose-managed) | `/etc/shlink/data` | SQLite DB, short-URL data |
 | Uptime Kuma | `uptime-kuma_data` (explicit name) | `/app/data` | Monitors, status history, and notification settings |
+| YOURLS DB | `yourls_db_data` (explicit name) | `/var/lib/mysql` | MySQL data dir — short-URL data, click stats |
 
 All volumes live under Docker's default storage location on the host
 (`/var/lib/docker/volumes/`). Explicit volume names map directly to
@@ -443,6 +449,12 @@ Four stateful application services (n8n, Directus, Obsidian, Shlink) have
 automated local backups via staggered nightly cron, each now also synced
 offsite to Mike's NAS over Tailscale (see below).
 
+- [ ] **YOURLS** — deployed 2026-09-08 (`docker/yourls/`, MySQL-backed, live
+      at `yourls.imurph.com`), no backup script yet. Follow the "Adding
+      backups for a new service" steps below; closest pattern is
+      `backup_directus.sh` (`docker exec yourls-db mysqldump` instead of
+      `pg_dump`, single DB volume — no separate uploads dir).
+
 - [x] **Directus** — added `docker/directus/backup_directus.sh`: `pg_dump`
       of `directus_db_data` via `docker exec directus-db pg_dump`, plus a
       tar of `directus_uploads`. Tested live: both produced real,
@@ -571,6 +583,8 @@ on the VPS:
       `Directus`. Left `Open-WebUI` and `Ollama` unattached — both
       internal-only (Tailscale/container-network), no public endpoint
       worth paging on.
+- [ ] Add a Kuma monitor for `yourls.imurph.com` (deployed 2026-09-08, not
+      yet in Kuma) and attach the Telegram notification channel.
 
 ### Operational hygiene
 

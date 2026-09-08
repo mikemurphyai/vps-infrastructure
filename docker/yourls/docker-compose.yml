@@ -1,0 +1,59 @@
+services:
+  yourls-db:
+    image: mysql:8.4
+    container_name: yourls-db
+    restart: unless-stopped
+    networks:
+      - app-net
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: yourls
+      MYSQL_USER: yourls
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - yourls_db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "yourls", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  yourls:
+    image: yourls:1.9-apache
+    container_name: yourls
+    restart: unless-stopped
+    depends_on:
+      yourls-db:
+        condition: service_healthy
+    networks:
+      - app-net
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.yourls.rule=Host(`yourls.imurph.com`)
+      - traefik.http.routers.yourls.tls=true
+      - traefik.http.routers.yourls.tls.certresolver=mytlschallenge
+      - traefik.http.routers.yourls.entrypoints=web,websecure
+      - traefik.http.services.yourls.loadbalancer.server.port=80
+      - traefik.http.middlewares.yourls-headers.headers.STSSeconds=315360000
+      - traefik.http.middlewares.yourls-headers.headers.browserXSSFilter=true
+      - traefik.http.middlewares.yourls-headers.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.yourls-headers.headers.forceSTSHeader=true
+      - traefik.http.middlewares.yourls-headers.headers.STSIncludeSubdomains=true
+      - traefik.http.middlewares.yourls-headers.headers.STSPreload=true
+      - traefik.http.routers.yourls.middlewares=yourls-headers@docker
+    environment:
+      YOURLS_DB_HOST: yourls-db
+      YOURLS_DB_USER: yourls
+      YOURLS_DB_PASS: ${MYSQL_PASSWORD}
+      YOURLS_DB_NAME: yourls
+      YOURLS_SITE: "https://yourls.imurph.com"
+      YOURLS_USER: ${YOURLS_USER}
+      YOURLS_PASS: ${YOURLS_PASS}
+
+networks:
+  app-net:
+    external: true
+
+volumes:
+  yourls_db_data:
+    name: yourls_db_data
