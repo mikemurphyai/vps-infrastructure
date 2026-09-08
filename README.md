@@ -583,8 +583,13 @@ on the VPS:
       `Directus`. Left `Open-WebUI` and `Ollama` unattached — both
       internal-only (Tailscale/container-network), no public endpoint
       worth paging on.
-- [ ] Add a Kuma monitor for `yourls.imurph.com` (deployed 2026-09-08, not
-      yet in Kuma) and attach the Telegram notification channel.
+- [x] Add a Kuma monitor for `yourls.imurph.com` (2026-09-08) — inserted
+      directly into `kuma.db` (same approach as the notification-wiring fix
+      above), same pattern as the `Shlink` monitor: HTTP check against
+      `https://yourls.imurph.com/admin/`, 60s interval, attached to "My
+      Telegram Alert" via `monitor_notification`. DB backed up first to
+      `/docker/uptime-kuma/kuma.db.bak.<timestamp>`. Verified live —
+      monitor id 23 is passing (`200 - OK`).
 
 ### Operational hygiene
 
