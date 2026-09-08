@@ -87,7 +87,8 @@ vps-infrastructure/
     ├── uptime_kuma/
     │   └── docker-compose.yml    # live at uptime.imurph.com (see §7 Monitoring)
     └── yourls/
-        └── docker-compose.yml    # yourls + MySQL DB, live at yourls.imurph.com
+        ├── docker-compose.yml    # yourls + MySQL DB, live at yourls.imurph.com
+        └── backup_yourls.sh      # yourls_db_data mysqldump backup (local + offsite via rclone → NAS)
 ```
 
 ---
@@ -445,15 +446,22 @@ they come up. Roughly ordered by priority within each group.
 
 ### Backups
 
-Four stateful application services (n8n, Directus, Obsidian, Shlink) have
-automated local backups via staggered nightly cron, each now also synced
-offsite to Mike's NAS over Tailscale (see below).
+Five stateful application services (n8n, Directus, Obsidian, Shlink, YOURLS)
+have automated local backups via staggered nightly cron, each now also
+synced offsite to Mike's NAS over Tailscale (see below).
 
-- [ ] **YOURLS** — deployed 2026-09-08 (`docker/yourls/`, MySQL-backed, live
-      at `yourls.imurph.com`), no backup script yet. Follow the "Adding
-      backups for a new service" steps below; closest pattern is
-      `backup_directus.sh` (`docker exec yourls-db mysqldump` instead of
-      `pg_dump`, single DB volume — no separate uploads dir).
+- [x] **YOURLS** — added `docker/yourls/backup_yourls.sh`: `mysqldump
+      --no-tablespaces` of the `yourls` DB via `docker exec yourls-db`
+      (password read from the container's own `MYSQL_PASSWORD` env var, never
+      duplicated into the script), gzipped. `--no-tablespaces` avoids a
+      harmless but noisy privilege warning from mysqldump running as a
+      non-root DB user. No separate uploads volume, unlike Directus. Tested
+      live (1.6KB dump — small install, expected). Cron: `10 3 * * *`.
+      Created a matching "Backup: yourls" push monitor in Uptime Kuma
+      (same direct-DB-insert approach as the `yourls.imurph.com` HTTP
+      monitor above; push token in `docker/yourls/.env`, gitignored),
+      93600s heartbeat, attached to the Telegram channel. Verified live:
+      offsite archive confirmed on the NAS, Kuma monitor flipped to up.
 
 - [x] **Directus** — added `docker/directus/backup_directus.sh`: `pg_dump`
       of `directus_db_data` via `docker exec directus-db pg_dump`, plus a
