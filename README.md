@@ -63,9 +63,6 @@ vps-infrastructure/
     ├── searxng/
     │   ├── docker-compose.yml    # Internal search backend for the n8n AI Assistant
     │   └── searxng-settings.yml  # Enables the JSON response format required by n8n
-    ├── obsidian/
-    │   ├── docker-compose.yml
-    │   └── backup_obsidian.sh    # obsidian_obsidian_data volume backup (local + offsite via rclone → NAS)
     ├── ollama/
     │   └── docker-compose.yml
     ├── open-webui/
@@ -110,7 +107,6 @@ Traefik and never bind a host port directly.
 | n8n Sandbox API | — (internal only) | 8080, 9090 | `app-net` only, no host binding |
 | n8n Sandbox Runner | — (internal only) | 8080, 9091 | `app-net` only, privileged Docker-in-Docker |
 | SearXNG | — (internal only) | 8080 | `app-net` only, no host binding |
-| Obsidian | — (Traefik only) | 3000 | Public via `obs.imurph.com` |
 | cv-rag Streamlit | — (Traefik only) | 8501 | Public via `chat.imurph.com` |
 | Shlink | — (Traefik only) | 8080 | Public via `${SUBDOMAIN}.imurph.com` + short domain |
 | Shlink Web Client | — (Traefik only) | 8080 | Public via `${ADMIN_SUBDOMAIN}.imurph.com` (basic auth) |
@@ -203,7 +199,6 @@ mostly just the compose file + `.env`).
 | n8n | `n8n_data` (external) | `/home/node/.n8n` | Workflows, credentials, DB — backed up by `backup_n8n.sh` |
 | n8n | bind mount `/local-files` | `/files` | Host-shared files dir |
 | n8n Sandbox | `n8n-sandbox_sandbox-tls` (compose-managed) | `/tls` | Mutual-TLS certificates for the sandbox API and runner |
-| Obsidian | `obsidian_data` (compose-managed) | `/config` | Vault + app config |
 | Ollama | `ollama_models` (external) | `/root/.ollama` | Pulled model weights |
 | Open WebUI | `open_webui_data` (external) | `/app/backend/data` | Chat history, users |
 | Directus | `directus_db_data` (external) | `/var/lib/postgresql/data` | Postgres data dir |
@@ -446,7 +441,7 @@ they come up. Roughly ordered by priority within each group.
 
 ### Backups
 
-Five stateful application services (n8n, Directus, Obsidian, Shlink, YOURLS)
+Four stateful application services (n8n, Directus, Shlink, YOURLS)
 have automated local backups via staggered nightly cron, each now also
 synced offsite to Mike's NAS over Tailscale (see below).
 
@@ -467,7 +462,7 @@ synced offsite to Mike's NAS over Tailscale (see below).
       of `directus_db_data` via `docker exec directus-db pg_dump`, plus a
       tar of `directus_uploads`. Tested live: both produced real,
       non-empty output (7MB dump, 90MB uploads archive).
-- [x] **Obsidian** — added `docker/obsidian/backup_obsidian.sh`. Note: the
+- [x] **Obsidian** *(decommissioned 2026-10-04 — see Operational hygiene)* — added `docker/obsidian/backup_obsidian.sh`. Note: the
       real volume is `obsidian_obsidian_data` (Compose project-prefixed,
       since `obsidian_data` has no explicit `name:` — see the compose
       file's own comment on this). Tested live, captured the real vault
@@ -671,6 +666,21 @@ on the VPS:
       (`EXECUTIONS_DATA_PRUNE` and related env vars) — a restart during
       setup surfaced 2,523 unfinished executions with no automatic
       cleanup in place.
+- [x] **Decommissioned Obsidian** (2026-10-04) — `obs.imurph.com` is gone.
+      Stopped the container, took a final tarball of `obsidian_obsidian_data`
+      (`obsidian_data_FINAL_20261004_143254.tar.gz`, 288MB, sha256
+      `b24c4991…01ff6`) plus a tarball of the old `/docker/obsidian` config
+      (`obsidian_config_FINAL_20261004.tar.gz`, includes `.env`). Both are in
+      `vault-nas:/Vault/Backups/Hostinger VPS/obsidian` (verified with
+      `rclone check --download`) alongside the nightly archives from 9/5–10/4;
+      the data tarball is also kept on the VPS in `/var/backups/obsidian/`.
+      Then `docker compose down`, removed the volume, the image, the
+      `/docker/obsidian` dir, and the `40 2` backup cron entry. Deleted the
+      `Obsidian` and `Backup: obsidian` Kuma monitors (ids 3 and 19) from
+      `kuma.db` with `foreign_keys=ON` so heartbeats/notification rows
+      cascaded (DB backed up first). Cloudflare DNS record removed by Mike.
+      To restore: `docker volume create obsidian_obsidian_data`, then untar
+      the archive into it with a throwaway alpine container.
 - [ ] Decide whether to build a simple deploy step (e.g., a script that
       `git pull`s this repo on the VPS and re-applies any changed compose
       file) so editing this repo actually updates the server, instead of
