@@ -1,0 +1,12 @@
+*
+!pyproject.toml
+!uv.lock
+!app.py
+!shorts.py
+!hosting.py
+!access_auth.py
+!tests/
+!tests/**
+!.streamlit/
+!.streamlit/config.toml
+!Dockerfile

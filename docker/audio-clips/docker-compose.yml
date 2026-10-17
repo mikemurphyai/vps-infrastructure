@@ -1,0 +1,82 @@
+services:
+  audio-clips:
+    build: ./app
+    image: audio-clips:0.2.1
+    pull_policy: never
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      AUTH_MODE: cloudflare
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:?Configure Access team domain}
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD:?Configure the Audio Clips audience}
+      CLIPS_STORAGE: /storage
+      CLIPS_STORAGE_GB: "5"
+      CLIPS_USER_STORAGE_GB: "1"
+      CLIPS_RETENTION_DAYS: "7"
+      SHORTS_MODEL: gpt-5.4
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    volumes:
+      - audio_clips_data:/storage
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 2g
+    cpus: 1.5
+    pids_limit: 128
+    networks:
+      - app-net
+    depends_on:
+      audio-clips-auth:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=app-net
+      - traefik.http.routers.audio-clips.rule=Host(`clips.imurph.com`)
+      - traefik.http.routers.audio-clips.entrypoints=websecure
+      - traefik.http.routers.audio-clips.tls=true
+      - traefik.http.routers.audio-clips.tls.certresolver=mytlschallenge
+      - traefik.http.services.audio-clips.loadbalancer.server.port=8517
+      - traefik.http.middlewares.audio-clips-auth.forwardauth.address=http://audio-clips-auth:8518/verify
+      - traefik.http.middlewares.audio-clips-auth.forwardauth.authRequestHeaders=Cf-Access-Jwt-Assertion
+      - traefik.http.middlewares.audio-clips-headers.headers.customResponseHeaders.Cache-Control=no-store
+      - traefik.http.middlewares.audio-clips-headers.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.audio-clips-headers.headers.referrerPolicy=no-referrer
+      - traefik.http.middlewares.audio-clips-headers.headers.stsSeconds=31536000
+      - traefik.http.routers.audio-clips.middlewares=audio-clips-auth@docker,audio-clips-headers@docker
+
+  audio-clips-auth:
+    image: audio-clips:0.2.1
+    pull_policy: never
+    command: ["python", "access_auth.py"]
+    restart: unless-stopped
+    environment:
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:?Configure Access team domain}
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD:?Configure the Audio Clips audience}
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    networks:
+      - app-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8518/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+networks:
+  app-net:
+    external: true
+
+volumes:
+  audio_clips_data:

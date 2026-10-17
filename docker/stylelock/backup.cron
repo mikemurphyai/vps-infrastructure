@@ -1,0 +1,3 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+25 3 * * * root /docker/stylelock/backup_stylelock.sh >> /var/backups/stylelock/backup.log 2>&1
