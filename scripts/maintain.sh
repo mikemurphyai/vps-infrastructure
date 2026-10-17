@@ -29,8 +29,20 @@ fi
 
 section "2. Updating Docker Services"
 for compose in /docker/*/docker-compose.yml; do
+    [ -f "$compose" ] || continue
     dir=$(dirname "$compose")
     svc=$(basename "$dir")
+    # Deployment backups are recovery copies, never runnable stacks.
+    case "$svc" in
+        *.backup|*.backup-*|*.bak|*.bak-*)
+            echo "--- Skipping backup directory: $svc ---"
+            continue
+            ;;
+    esac
+    if [ -f "$dir/.maintenance-ignore" ]; then
+        echo "--- Skipping excluded directory: $svc ---"
+        continue
+    fi
     echo "--- $svc ---"
     if (cd "$dir" && docker compose pull && docker compose up -d); then
         ok "$svc updated"

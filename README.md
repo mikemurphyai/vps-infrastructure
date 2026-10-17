@@ -225,8 +225,9 @@ What it does, in order:
 1. **OS update** — `apt-get update && upgrade -y && autoremove -y`
 2. **Every docker-compose stack** — loops over every `/docker/*/docker-compose.yml`
    it finds, running `docker compose pull && docker compose up -d` in each.
-   No stack is special-cased or hardcoded — add a new service
-   directory and the next run picks it up automatically.
+   Backup directories ending in `.backup`, `.backup-*`, `.bak`, or `.bak-*`
+   are skipped, as are directories containing a `.maintenance-ignore` file.
+   Add a new service directory and the next run picks it up automatically.
 3. **Image cleanup** — `docker image prune -f`
 
 Each step is tracked independently: a failure in one service's update
