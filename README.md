@@ -50,7 +50,8 @@ vps-infrastructure/
 ├── .gitignore
 ├── scripts/
 │   ├── maintain.sh              # OS + container update pipeline (see §5)
-│   └── cf-lockdown.sh           # Cloudflare-only firewall for ports 80/443 (see §1)
+│   ├── cf-lockdown.sh           # Cloudflare-only firewall for ports 80/443 (see §1)
+│   └── check_image_update.sh    # Kuma alert when an app release ships patched Node (Directus, n8n)
 ├── vps_maintenance_dasshboard    # n8n workflow export — webhook-triggered maintenance
 └── docker/
     ├── traefik/
@@ -71,8 +72,7 @@ vps-infrastructure/
     │   └── docker-compose.yml    # Streamlit frontend, calls n8n via app-net
     ├── directus/
     │   ├── docker-compose.yml
-    │   ├── backup_directus.sh    # pg_dump + uploads tar (local + offsite via rclone → NAS)
-    │   └── check_directus_update.sh # weekly: alerts via Kuma when a release ships patched Node
+    │   └── backup_directus.sh    # pg_dump + uploads tar (local + offsite via rclone → NAS)
     ├── excalidraw/
     │   └── docker-compose.yml    # Excalidraw whiteboard
     ├── shlink/
@@ -734,18 +734,24 @@ on the VPS:
       `shlink-rollback:5.1.5-php8.5.7` (old image, still tagged on the VPS)
       and `docker compose up -d --no-deps shlink` — no schema changes, so
       the data is compatible either way.
-- [x] **Weekly Directus update check** (2026-10-22) — Directus 12.1.1 and
-      the latest release (12.5.0, 2026-10-07) both ship Node 22.23.x older
-      than the 2026-10-21 security release, so there was nothing to
-      upgrade to yet. `docker/directus/check_directus_update.sh` (cron
-      `0 13 * * 1`, Mondays 9am ET) reads the newest `X.Y.Z` tag from
-      Docker Hub and its `NODE_VERSION` from the registry config blob (no
-      pull), then pushes to the "Update: directus" Kuma monitor (id 26,
-      691200s/8-day heartbeat, Telegram): **up** while waiting, **down**
-      once a newer release ships Node >= 22.23.4 / 24.22.1 / 26.12.1
-      (`MIN_NODE` in the script — update it for future Node advisories).
-      Push URL is `KUMA_UPDATE_PUSH_URL` in `/docker/directus/.env`,
-      gitignored. Log: `/var/log/directus-update-check.log`.
+- [x] **Update checks for Directus and n8n** (2026-10-22) — no release of
+      either ships Node patched for the 2026-10-21 security release yet
+      (Directus 12.5.0 → Node 22.23.3; n8n 2.44.5 stable → Node 26.10.0),
+      so there was nothing to upgrade to. `scripts/check_image_update.sh`
+      (installed as `/usr/local/sbin/check_image_update.sh`) resolves the
+      project's stable floating tag (`latest` / n8n's `stable`) to its
+      `X.Y.Z` tag by digest — so n8n betas published as plain versions are
+      ignored — reads that image's `NODE_VERSION` from the registry config
+      blob (no pull), and pushes to the app's "Update: <name>" Kuma monitor
+      (Telegram): **up** while waiting, **down** once a newer release ships
+      Node >= 22.23.4 / 24.22.1 / 26.12.1 (`MIN_NODE` in the script —
+      update it for future Node advisories). Cron:
+      - Directus — `0 13 * * 1` (Mondays 9am ET), monitor id 26, 8-day heartbeat
+      - n8n — `5 13 * * *` (daily; n8n is the most exposed to the Node
+        Brotli/TLS bugs via HTTP Request nodes), monitor id 27, 26h heartbeat
+
+      Push URLs are `KUMA_UPDATE_PUSH_URL` in each app's `.env`, gitignored.
+      Logs: `/var/log/<name>-update-check.log`.
 - [ ] Upgrade Directus when "Update: directus" goes down — the Astro site
       (mikemurphy.ai) depends on its API, so do it as a planned upgrade:
       read release notes from 12.2 onward for breaking changes, fresh
@@ -753,6 +759,9 @@ on the VPS:
       Directus runs its DB migrations on startup, so rollback = restore
       the dump + old image. The monitor turns green on its own once the
       compose file is on the new version.
+- [ ] Upgrade n8n when "Update: n8n" goes down (running 2.43.7). Repo
+      compose was 8 minor versions behind the VPS (2.35.7) until
+      2026-10-22 — keep `docker/n8n/docker-compose.yml` in sync on upgrade.
 - [ ] Switch Shlink back to the official `shlinkio/shlink` image once a
       release ships PHP >= 8.5.12 (check with
       `docker run --rm --entrypoint php shlinkio/shlink:<tag> -v`), then
