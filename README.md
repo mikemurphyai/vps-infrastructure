@@ -766,6 +766,24 @@ on the VPS:
       Directus runs its DB migrations on startup, so rollback = restore
       the dump + old image. The monitor turns green on its own once the
       compose file is on the new version.
+- [x] **Upgraded Uptime Kuma 1.23.17 → 2.5.6** (2026-10-22) — v1 runs on
+      Node 18 (EOL, no fix for the 2026-10-21 Node advisory). Rehearsed
+      first on a copy of the data with `--network none` (so the copy
+      couldn't check sites or send Telegram): aggregate-table migration
+      took 12m52s, monitor config (ids, names, URLs, intervals, push tokens)
+      hashed identical before/after. Real upgrade: paused the 03:10 Kuma
+      backup cron, stopped Kuma, cold backup
+      `uptime-kuma_data_PRE-V2_20261022_030924.tar.gz` (in
+      `/var/backups/uptime-kuma/` + NAS, `rclone check --download`), set
+      image to `louislam/uptime-kuma:2.5.6`, migration took 13m38s (~15 min
+      with no monitoring). Verified: all 17 monitors UP, all 7 push
+      monitors accepting pings, notifications intact, cron re-enabled.
+      Data dir grew 207MB → 349MB (v2 aggregate tables).
+      **Rollback:** compose back to `louislam/uptime-kuma:1`, stop Kuma,
+      empty `uptime-kuma_data`, untar the PRE-V2 archive into it, start —
+      v1 can't read the migrated DB, so the restore is required.
+      **Note:** v2 changes the schema — the direct `kuma.db` INSERT recipes
+      above were written for v1; prefer adding monitors via the UI now.
 - [ ] Upgrade n8n when "Update: n8n" goes down (running 2.43.7). Repo
       compose was 8 minor versions behind the VPS (2.35.7) until
       2026-10-22 — keep `docker/n8n/docker-compose.yml` in sync on upgrade.
