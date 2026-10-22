@@ -51,7 +51,7 @@ vps-infrastructure/
 ├── scripts/
 │   ├── maintain.sh              # OS + container update pipeline (see §5)
 │   ├── cf-lockdown.sh           # Cloudflare-only firewall for ports 80/443 (see §1)
-│   └── check_image_update.sh    # Kuma alert when an app release ships patched Node (Directus, n8n)
+│   └── check_image_update.sh    # Kuma alert when an app release ships patched Node/PHP (Directus, n8n, Shlink)
 ├── vps_maintenance_dasshboard    # n8n workflow export — webhook-triggered maintenance
 └── docker/
     ├── traefik/
@@ -749,6 +749,13 @@ on the VPS:
       - Directus — `0 13 * * 1` (Mondays 9am ET), monitor id 26, 8-day heartbeat
       - n8n — `5 13 * * *` (daily; n8n is the most exposed to the Node
         Brotli/TLS bugs via HTTP Request nodes), monitor id 27, 26h heartbeat
+      - Shlink — `10 13 * * *` with the `php` runtime arg, monitor id 28,
+        26h heartbeat. Checks `PHP_VERSION` against PHP2Shell fixes
+        (`MIN_PHP`: 8.2.35 / 8.3.36 / 8.4.27 / 8.5.12). Since the compose
+        file runs the local `shlink-local` build, the script sees no
+        official version and alerts as soon as *any* official stable release
+        ships patched PHP — that's the signal to switch back (see to-do
+        below). After switching, it behaves like the others.
 
       Push URLs are `KUMA_UPDATE_PUSH_URL` in each app's `.env`, gitignored.
       Logs: `/var/log/<name>-update-check.log`.
@@ -763,8 +770,9 @@ on the VPS:
       compose was 8 minor versions behind the VPS (2.35.7) until
       2026-10-22 — keep `docker/n8n/docker-compose.yml` in sync on upgrade.
 - [ ] Switch Shlink back to the official `shlinkio/shlink` image once a
-      release ships PHP >= 8.5.12 (check with
-      `docker run --rm --entrypoint php shlinkio/shlink:<tag> -v`), then
+      release ships PHP >= 8.5.12 — the "Update: shlink" Kuma monitor goes
+      down (Telegram) when that happens. Confirm with
+      `docker run --rm --entrypoint php shlinkio/shlink:<tag> -v`, then
       remove `shlink-local`/`shlink-rollback` images and `/root/build`.
 - [ ] Shlink web client is running `shlinkio/shlink-web-client:stable`
       but the compose file pins `4.8.0` — reconcile on next redeploy
