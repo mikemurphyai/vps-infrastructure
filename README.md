@@ -81,11 +81,8 @@ vps-infrastructure/
     │   ├── docker-compose.yml    # Podcast Asset Finder web app
     │   ├── .env.example
     │   └── README.md             # Deployment and rollback runbook
-    ├── uptime_kuma/
-    │   └── docker-compose.yml    # live at uptime.imurph.com (see §7 Monitoring)
-    └── yourls/
-        ├── docker-compose.yml    # yourls + MySQL DB, live at yourls.imurph.com
-        └── backup_yourls.sh      # yourls_db_data mysqldump backup (local + offsite via rclone → NAS)
+    └── uptime_kuma/
+        └── docker-compose.yml    # live at uptime.imurph.com (see §7 Monitoring)
 ```
 
 ---
@@ -113,8 +110,6 @@ Traefik and never bind a host port directly.
 | Podcast Asset Finder | — (Traefik only) | 8000 | `podfiles.imurph.com` via Cloudflare Access |
 | How-To Pilot | — (Traefik only) | 80 | `howto.imurph.com` via Cloudflare Access; see `docker/howto/README.md` |
 | Uptime Kuma | — (Traefik only) | 3001 | Public via `uptime.imurph.com` |
-| YOURLS | — (Traefik only) | 80 | Public via `yourls.imurph.com` |
-| YOURLS DB (MySQL) | — (internal only) | 3306 | `app-net` only, no host binding |
 | Directus DB | — (internal only) | 5432 | `app-net` only, no host binding |
 
 > All host bindings are now either Traefik (Cloudflare-gated) or the
@@ -205,7 +200,6 @@ mostly just the compose file + `.env`).
 | Directus | `directus_uploads` (external) | `/directus/uploads` | User-uploaded assets |
 | Shlink | `shlink_data` (compose-managed) | `/etc/shlink/data` | SQLite DB, short-URL data |
 | Uptime Kuma | `uptime-kuma_data` (explicit name) | `/app/data` | Monitors, status history, and notification settings |
-| YOURLS DB | `yourls_db_data` (explicit name) | `/var/lib/mysql` | MySQL data dir — short-URL data, click stats |
 
 All volumes live under Docker's default storage location on the host
 (`/var/lib/docker/volumes/`). Explicit volume names map directly to
@@ -442,11 +436,11 @@ they come up. Roughly ordered by priority within each group.
 
 ### Backups
 
-Four stateful application services (n8n, Directus, Shlink, YOURLS)
+Three stateful application services (n8n, Directus, Shlink)
 have automated local backups via staggered nightly cron, each now also
 synced offsite to Mike's NAS over Tailscale (see below).
 
-- [x] **YOURLS** — added `docker/yourls/backup_yourls.sh`: `mysqldump
+- [x] **YOURLS** *(decommissioned 2026-10-22 — see Operational hygiene)* — added `docker/yourls/backup_yourls.sh`: `mysqldump
       --no-tablespaces` of the `yourls` DB via `docker exec yourls-db`
       (password read from the container's own `MYSQL_PASSWORD` env var, never
       duplicated into the script), gzipped. `--no-tablespaces` avoids a
@@ -587,7 +581,8 @@ on the VPS:
       `Directus`. Left `Open-WebUI` and `Ollama` unattached — both
       internal-only (Tailscale/container-network), no public endpoint
       worth paging on.
-- [x] Add a Kuma monitor for `yourls.imurph.com` (2026-09-08) — inserted
+- [x] Add a Kuma monitor for `yourls.imurph.com` (2026-09-08; removed
+      with YOURLS 2026-10-22) — inserted
       directly into `kuma.db` (same approach as the notification-wiring fix
       above), same pattern as the `Shlink` monitor: HTTP check against
       `https://yourls.imurph.com/admin/`, 60s interval, attached to "My
@@ -682,6 +677,23 @@ on the VPS:
       cascaded (DB backed up first). Cloudflare DNS record removed by Mike.
       To restore: `docker volume create obsidian_obsidian_data`, then untar
       the archive into it with a throwaway alpine container.
+- [x] **Decommissioned YOURLS** (2026-10-22) — `yourls.imurph.com` is gone.
+      Never used (1.6KB DB), and its `yourls:1.9-apache` image ran PHP
+      8.3.19 under mod_php, the highest-risk setup for PHP2Shell
+      (CVE-2026-109618/109619), so it was removed rather than patched.
+      Took a final dump (`yourls_db_FINAL_20261022_015818.sql.gz`, sha256
+      `2b06a3d3…266b3`) plus a tarball of the old `/docker/yourls` config
+      (`yourls_config_FINAL_20261022.tar.gz`, includes `.env`). Both are in
+      `vault-nas:/Vault/Backups/Hostinger VPS/yourls` (verified with
+      `rclone check --download`) alongside the nightly dumps, and kept on
+      the VPS in `/var/backups/yourls/`. Then `docker compose down`, removed
+      the `yourls_db_data` volume, the `yourls:1.9-apache` and `mysql:8.4`
+      images, the `/docker/yourls` dir, and the `10 3` backup cron entry
+      (crontab backed up to `/root/crontab.bak.<timestamp>`). Deleted the
+      `YOURLS` and `Backup: yourls` Kuma monitors (ids 23 and 24) from
+      `kuma.db` with `foreign_keys=ON` (DB backed up first). Cloudflare DNS
+      record removed by Mike. To restore: recreate the compose stack from git history, then pipe the dump into
+      `mysql` in the `yourls-db` container.
 - [ ] Decide whether to build a simple deploy step (e.g., a script that
       `git pull`s this repo on the VPS and re-applies any changed compose
       file) so editing this repo actually updates the server, instead of
