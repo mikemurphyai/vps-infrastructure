@@ -82,7 +82,8 @@ vps-infrastructure/
     │   ├── .env.example
     │   └── README.md             # Deployment and rollback runbook
     └── uptime_kuma/
-        └── docker-compose.yml    # live at uptime.imurph.com (see §7 Monitoring)
+        ├── docker-compose.yml    # live at uptime.imurph.com (see §7 Monitoring)
+        └── backup_uptime_kuma.sh # kuma.db online .backup + data dirs (local + offsite via rclone → NAS)
 ```
 
 ---
@@ -436,9 +437,27 @@ they come up. Roughly ordered by priority within each group.
 
 ### Backups
 
-Three stateful application services (n8n, Directus, Shlink)
+Four stateful application services (n8n, Directus, Shlink, Uptime Kuma)
 have automated local backups via staggered nightly cron, each now also
 synced offsite to Mike's NAS over Tailscale (see below).
+
+- [x] **Uptime Kuma** (2026-10-22) — added
+      `docker/uptime_kuma/backup_uptime_kuma.sh` (deployed to
+      `/docker/uptime-kuma/`). Kuma writes `kuma.db` constantly in WAL
+      mode, so instead of a raw volume tar it takes a SQLite online
+      `.backup` in a throwaway alpine container, runs `PRAGMA
+      integrity_check` on the snapshot, and archives it with the
+      `upload`/`screenshots`/`docker-tls` dirs into
+      `/var/backups/uptime-kuma/` (~58MB compressed). Cron: `10 3 * * *`.
+      "Backup: uptime-kuma" push monitor (id 25) cloned from
+      `Backup: shlink` via direct DB insert (93600s heartbeat, Telegram);
+      push URL in `/docker/uptime-kuma/.env`, gitignored. Verified live:
+      offsite archive confirmed with `rclone check --download`, push
+      heartbeat recorded as up. At the same time moved the old manual
+      `kuma.db.bak.*` copies (~700MB) out of the live volume to
+      `/var/backups/uptime-kuma-legacy/`. Since Kuma 2.x drops JSON
+      backup/restore, this data-dir archive is the restore path: stop
+      Kuma, untar into `uptime-kuma_data`, start.
 
 - [x] **YOURLS** *(decommissioned 2026-10-22 — see Operational hygiene)* — added `docker/yourls/backup_yourls.sh`: `mysqldump
       --no-tablespaces` of the `yourls` DB via `docker exec yourls-db`
