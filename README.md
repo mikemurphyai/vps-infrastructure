@@ -751,11 +751,11 @@ on the VPS:
         Brotli/TLS bugs via HTTP Request nodes), monitor id 27, 26h heartbeat
       - Shlink — `10 13 * * *` with the `php` runtime arg, monitor id 28,
         26h heartbeat. Checks `PHP_VERSION` against PHP2Shell fixes
-        (`MIN_PHP`: 8.2.35 / 8.3.36 / 8.4.27 / 8.5.12). Since the compose
-        file runs the local `shlink-local` build, the script sees no
-        official version and alerts as soon as *any* official stable release
-        ships patched PHP — that's the signal to switch back (see to-do
-        below). After switching, it behaves like the others.
+        (`MIN_PHP`: 8.2.35 / 8.3.36 / 8.4.27 / 8.5.12). While the compose
+        file ran the local `shlink-local` build, the script saw no official
+        version and alerted as soon as *any* official stable release shipped
+        patched PHP — it fired for 5.1.8 on 2026-10-22. Now that Shlink is
+        back on the official image, it behaves like the others.
 
       Push URLs are `KUMA_UPDATE_PUSH_URL` in each app's `.env`, gitignored.
       Logs: `/var/log/<name>-update-check.log`.
@@ -784,14 +784,25 @@ on the VPS:
       v1 can't read the migrated DB, so the restore is required.
       **Note:** v2 changes the schema — the direct `kuma.db` INSERT recipes
       above were written for v1; prefer adding monitors via the UI now.
-- [ ] Upgrade n8n when "Update: n8n" goes down (running 2.43.7). Repo
-      compose was 8 minor versions behind the VPS (2.35.7) until
-      2026-10-22 — keep `docker/n8n/docker-compose.yml` in sync on upgrade.
-- [ ] Switch Shlink back to the official `shlinkio/shlink` image once a
-      release ships PHP >= 8.5.12 — the "Update: shlink" Kuma monitor goes
-      down (Telegram) when that happens. Confirm with
-      `docker run --rm --entrypoint php shlinkio/shlink:<tag> -v`, then
-      remove `shlink-local`/`shlink-rollback` images and `/root/build`.
+- [x] **Upgraded n8n 2.43.7 → 2.44.6** (2026-10-22, by Mike after the
+      "Update: n8n" alert) — ships Node 26.12.1 (patched). Repo compose
+      synced. (It had drifted 8 minor versions behind the VPS before
+      2026-10-22 — keep `docker/n8n/docker-compose.yml` in sync on upgrade.)
+- [x] **Switched Shlink back to official `shlinkio/shlink:5.1.8`**
+      (2026-10-22, after the "Update: shlink" alert) — PHP 8.5.12, Alpine
+      3.24. Note it ships **RoadRunner 3.0.1** (the major version the local
+      build had pinned away from); upstream's `.rr.yml` and entrypoint are
+      byte-identical to 5.1.7. Rehearsed on a copy of the live DB first:
+      RR 3.0.1 started cleanly, migrations unchanged (10), all 277 short
+      URLs returned the exact original URL in `Location`, REST API
+      (list/visits/bad-key 401) worked with a throwaway rehearsal key. Cold
+      backup `shlink_data_PRE-5.1.8_20261022_131740.tar.gz` (VPS + NAS,
+      `rclone check --download`), then swap with ~15s downtime; verified
+      publicly. Removed the vulnerable 5.1.5 image. **Rollback:** compose
+      image → `shlink-local:5.1.7-php8.5.12` (still on the VPS) and
+      `docker compose up -d --no-deps shlink`.
+- [ ] After a week on 5.1.8 (~2026-10-29), remove the `shlink-local` image
+      and `/root/build/shlink-5.1.7` from the VPS.
 - [ ] Shlink web client is running `shlinkio/shlink-web-client:stable`
       but the compose file pins `4.8.0` — reconcile on next redeploy
       (static nginx app, not affected by PHP2Shell).

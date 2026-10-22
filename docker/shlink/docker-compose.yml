@@ -1,9 +1,6 @@
 services:
   shlink:
-    # Locally built: Shlink 5.1.7 on php:8.5.12-alpine3.23 (PHP2Shell fix,
-    # CVE-2026-109618/109619), RoadRunner pinned to 2025.1.15. Switch back to
-    # shlinkio/shlink once an official image ships PHP >= 8.5.12. See README.
-    image: shlink-local:5.1.7-php8.5.12
+    image: shlinkio/shlink:5.1.8
     restart: unless-stopped
     labels:
       - traefik.enable=true
