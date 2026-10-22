@@ -71,7 +71,8 @@ vps-infrastructure/
     │   └── docker-compose.yml    # Streamlit frontend, calls n8n via app-net
     ├── directus/
     │   ├── docker-compose.yml
-    │   └── backup_directus.sh    # pg_dump + uploads tar (local + offsite via rclone → NAS)
+    │   ├── backup_directus.sh    # pg_dump + uploads tar (local + offsite via rclone → NAS)
+    │   └── check_directus_update.sh # weekly: alerts via Kuma when a release ships patched Node
     ├── excalidraw/
     │   └── docker-compose.yml    # Excalidraw whiteboard
     ├── shlink/
@@ -733,6 +734,25 @@ on the VPS:
       `shlink-rollback:5.1.5-php8.5.7` (old image, still tagged on the VPS)
       and `docker compose up -d --no-deps shlink` — no schema changes, so
       the data is compatible either way.
+- [x] **Weekly Directus update check** (2026-10-22) — Directus 12.1.1 and
+      the latest release (12.5.0, 2026-10-07) both ship Node 22.23.x older
+      than the 2026-10-21 security release, so there was nothing to
+      upgrade to yet. `docker/directus/check_directus_update.sh` (cron
+      `0 13 * * 1`, Mondays 9am ET) reads the newest `X.Y.Z` tag from
+      Docker Hub and its `NODE_VERSION` from the registry config blob (no
+      pull), then pushes to the "Update: directus" Kuma monitor (id 26,
+      691200s/8-day heartbeat, Telegram): **up** while waiting, **down**
+      once a newer release ships Node >= 22.23.4 / 24.22.1 / 26.12.1
+      (`MIN_NODE` in the script — update it for future Node advisories).
+      Push URL is `KUMA_UPDATE_PUSH_URL` in `/docker/directus/.env`,
+      gitignored. Log: `/var/log/directus-update-check.log`.
+- [ ] Upgrade Directus when "Update: directus" goes down — the Astro site
+      (mikemurphy.ai) depends on its API, so do it as a planned upgrade:
+      read release notes from 12.2 onward for breaking changes, fresh
+      `pg_dump` right before, rehearse on a copy of the DB, then swap.
+      Directus runs its DB migrations on startup, so rollback = restore
+      the dump + old image. The monitor turns green on its own once the
+      compose file is on the new version.
 - [ ] Switch Shlink back to the official `shlinkio/shlink` image once a
       release ships PHP >= 8.5.12 (check with
       `docker run --rm --entrypoint php shlinkio/shlink:<tag> -v`), then
