@@ -692,8 +692,35 @@ on the VPS:
       (crontab backed up to `/root/crontab.bak.<timestamp>`). Deleted the
       `YOURLS` and `Backup: yourls` Kuma monitors (ids 23 and 24) from
       `kuma.db` with `foreign_keys=ON` (DB backed up first). Cloudflare DNS
-      record removed by Mike. To restore: recreate the compose stack from git history, then pipe the dump into
-      `mysql` in the `yourls-db` container.
+      record removed by Mike. To restore: recreate the compose stack from
+      git history, then pipe the dump into `mysql` in the `yourls-db`
+      container.
+- [x] **Patched Shlink for PHP2Shell** (2026-10-22) — the official image
+      (5.1.5 on PHP 8.5.7) was vulnerable and no patched `shlinkio/shlink`
+      existed yet, so built one on the VPS: `git clone --branch v5.1.7`
+      into `/root/build/shlink-5.1.7` with two Dockerfile edits —
+      `FROM php:8.5.12-alpine3.23` (Shlink's `php:8.5-alpine3.22` base is no
+      longer updated upstream and stays on 8.5.7) and
+      `rr get ... --filter=2025.1.15` (unpinned, it pulled RoadRunner 3.0.1;
+      the official 5.1.7 image ships 2025.1.15). Result
+      `shlink-local:5.1.7-php8.5.12`: same 47 PHP extensions and identical
+      `.rr.yml`/entrypoint as the official image. Rehearsed against a copy
+      of the live SQLite DB on an isolated network first — migrations
+      unchanged (10), all 277 short URLs returned the exact original URL in
+      `Location`. Swap took ~15s of downtime; cold pre-upgrade backup
+      `shlink_data_PRE-UPGRADE_20261022_021020.tar.gz` is in
+      `/var/backups/shlink/` and on the NAS (verified with
+      `rclone check --download`). **Rollback:** set the compose image to
+      `shlink-rollback:5.1.5-php8.5.7` (old image, still tagged on the VPS)
+      and `docker compose up -d --no-deps shlink` — no schema changes, so
+      the data is compatible either way.
+- [ ] Switch Shlink back to the official `shlinkio/shlink` image once a
+      release ships PHP >= 8.5.12 (check with
+      `docker run --rm --entrypoint php shlinkio/shlink:<tag> -v`), then
+      remove `shlink-local`/`shlink-rollback` images and `/root/build`.
+- [ ] Shlink web client is running `shlinkio/shlink-web-client:stable`
+      but the compose file pins `4.8.0` — reconcile on next redeploy
+      (static nginx app, not affected by PHP2Shell).
 - [ ] Decide whether to build a simple deploy step (e.g., a script that
       `git pull`s this repo on the VPS and re-applies any changed compose
       file) so editing this repo actually updates the server, instead of
