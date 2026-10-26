@@ -18,7 +18,7 @@ services:
       retries: 5
 
   directus:
-    image: directus/directus:12.1.1
+    image: directus/directus:12.5.1
     container_name: directus
     restart: unless-stopped
     depends_on:

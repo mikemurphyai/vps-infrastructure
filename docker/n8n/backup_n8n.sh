@@ -46,17 +46,22 @@ find "$BACKUP_DIR" -type f -name "n8n_data_*.tar.gz" -mtime +"${RETENTION_LOCAL_
 log "Local retention applied: > ${RETENTION_LOCAL_DAYS} days deleted (if any)."
 
 # Offsite (only if rclone is installed & remote configured)
+OFFSITE_OK=1
 if command -v rclone >/dev/null 2>&1; then
   rclone copy "$BACKUP_DIR" "vault-nas:/Vault/Backups/Hostinger VPS/n8n" \
     --transfers=2 --checkers=4 \
     --create-empty-src-dirs \
-    --log-file=/root/rclone_backup.log || true
+    --log-file=/root/rclone_backup.log || OFFSITE_OK=0
 
   rclone delete "vault-nas:/Vault/Backups/Hostinger VPS/n8n" \
     --min-age "${RETENTION_REMOTE_DAYS}d" \
     --log-file=/root/rclone_backup.log || true
 
-  log "Offsite sync complete (remote retention applied)."
+  if [ "$OFFSITE_OK" = 1 ]; then
+    log "Offsite sync complete (remote retention applied)."
+  else
+    log "Offsite sync to NAS FAILED (see /root/rclone_backup.log)."
+  fi
 else
   log "rclone not installed; skipping offsite sync."
 fi
@@ -64,4 +69,13 @@ fi
 log "Backup completed successfully."
 
 # Ping Uptime Kuma (dead-man's-switch monitor for this cron job)
-curl -fsS -m 10 "$KUMA_PUSH_URL" >/dev/null 2>&1 || log "Warning: failed to ping Uptime Kuma push monitor."
+# A failed NAS sync reports "down" (Telegram alert) instead of "up", so an
+# unreachable NAS can't go unnoticed while local backups keep succeeding.
+if [ "$OFFSITE_OK" = 1 ]; then
+  curl -fsS -m 10 "$KUMA_PUSH_URL" >/dev/null 2>&1 || log "Warning: failed to ping Uptime Kuma push monitor."
+else
+  curl -fsS -m 10 --get "${KUMA_PUSH_URL%%\?*}" \
+    --data-urlencode "status=down" \
+    --data-urlencode "msg=Local backup OK, but offsite sync to the NAS failed (see /root/rclone_backup.log)" \
+    >/dev/null 2>&1 || log "Warning: failed to ping Uptime Kuma push monitor."
+fi

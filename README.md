@@ -759,13 +759,43 @@ on the VPS:
 
       Push URLs are `KUMA_UPDATE_PUSH_URL` in each app's `.env`, gitignored.
       Logs: `/var/log/<name>-update-check.log`.
-- [ ] Upgrade Directus when "Update: directus" goes down — the Astro site
-      (mikemurphy.ai) depends on its API, so do it as a planned upgrade:
-      read release notes from 12.2 onward for breaking changes, fresh
-      `pg_dump` right before, rehearse on a copy of the DB, then swap.
-      Directus runs its DB migrations on startup, so rollback = restore
-      the dump + old image. The monitor turns green on its own once the
-      compose file is on the new version.
+- [x] **Upgraded Directus 12.1.1 → 12.5.1** (2026-10-26, after the
+      "Update: directus" alert) — Node 22.23.4 (patched). Release notes
+      12.2.0–12.5.1 reviewed: none of the breaking changes apply (Astro uses
+      plain REST `fetch`, not `@directus/sdk`; `/assets/<id>` without
+      transforms; no policy `ip_access`; no custom CMD/extensions/
+      `CACHE_SCHEMA_*`). Editors will see the 12.2 Tiptap WYSIWYG, which
+      may lock a field read-only until a markup-normalization warning is
+      confirmed. **A/B rehearsal:** 12.1.1 and 12.5.1 side by side, each on
+      its own `pg_restore` of the live DB, on an `--internal` network
+      (no egress, no Traefik), uploads mounted read-only. 4 migrations
+      (106 → 110) ran cleanly; every Astro request (Field_Notes,
+      Resources, Brand_Kit with Astro's exact `fields`/filter/sort, plus
+      all 51 referenced `/assets/<id>` files) returned byte-identical
+      responses with the real Astro token; podcast_episodes PATCH/POST
+      behaved identically (via a throwaway admin token set only in the
+      copies). **Live:** baseline of the 54 Astro responses through
+      `cms.imurph.com`, stopped only the app container, cold
+      `pg_dump` + uploads tar
+      (`directus_*_PRE-12.5.1_20261026_133518.*`, VPS + NAS verified with
+      `rclone check --download`), swap ~2 min downtime; all 54 responses
+      identical to the baseline afterwards. A first attempt at 13:16 was
+      aborted and 12.1.1 restarted (~11 min down) because the NAS was
+      unreachable — see the NAS entry below. **Rollback:** compose →
+      `directus/directus:12.1.1` (image still on the VPS), restore the
+      PRE-12.5.1 dump into a fresh `directus` DB (migrations aren't
+      reversible), `docker compose up -d --no-deps directus`.
+- [x] **NAS offsite outage went unnoticed** (found 2026-10-26) — the NAS
+      was unreachable over Tailscale on the nights of 10/25 and 10/26
+      (`rclone ... couldn't connect SSH: i/o timeout` in
+      `/root/rclone_backup.log`), but the backup scripts swallowed the
+      failure (`rclone copy ... || true`) and still pushed "up" to Kuma.
+      Caught up all five services once the NAS was back (0 differences).
+      Fixed n8n/Directus/Shlink/Kuma backup scripts: a failed
+      `rclone copy` now sets `OFFSITE_OK=0`, logs it, and pushes
+      `status=down` with a message to the backup's Kuma monitor (Telegram)
+      instead of "up". (stylelock's script already fails the run if its
+      `rclone copyto` fails.)
 - [x] **Upgraded Uptime Kuma 1.23.17 → 2.5.6** (2026-10-22) — v1 runs on
       Node 18 (EOL, no fix for the 2026-10-21 Node advisory). Rehearsed
       first on a copy of the data with `--network none` (so the copy
