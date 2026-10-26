@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Is there an official release of an app image, newer than the one in its
-# compose file, whose runtime (Node.js or PHP) has the October 2026 security
-# fixes? Reports to the app's "Update: <name>" Kuma push monitor:
+# Is the app still on a runtime (Node.js or PHP) without the October 2026
+# security fixes, and is there an official release, newer than the one in its
+# compose file, that has them? Reports to the app's "Update: <name>" Kuma push
+# monitor:
 #   up   = nothing to do yet (still waiting on a patched release)
 #   down = a patched release is out -> Telegram alert, time to upgrade
 # If the compose file isn't on the official image (e.g. Shlink's local
@@ -68,17 +69,30 @@ TOKEN="$(curl -fsS -m 30 "https://auth.docker.io/token?service=registry.docker.i
 ACCEPT="application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json"
 reg() { curl -fsSL -m 30 -H "Authorization: Bearer ${TOKEN}" -H "Accept: ${ACCEPT}" "https://registry-1.docker.io/v2/${REPO}/$1"; }
 
-RT_VER=""
-if [ -n "$LATEST" ]; then
-  MANIFEST="$(reg "manifests/${LATEST}")"
-  if echo "$MANIFEST" | jq -e '.manifests' >/dev/null; then
-    DIGEST="$(echo "$MANIFEST" | jq -r '.manifests[] | select(.platform.os=="linux" and .platform.architecture=="amd64") | .digest' | head -1)"
-    MANIFEST="$(reg "manifests/${DIGEST}")"
+rt_version_of() {  # rt_version_of <tag> -> X.Y.Z of the runtime baked into that tag
+  local manifest digest config
+  manifest="$(reg "manifests/$1")" || return 0
+  if echo "$manifest" | jq -e '.manifests' >/dev/null; then
+    digest="$(echo "$manifest" | jq -r '.manifests[] | select(.platform.os=="linux" and .platform.architecture=="amd64") | .digest' | head -1)"
+    manifest="$(reg "manifests/${digest}")" || return 0
   fi
-  CONFIG_DIGEST="$(echo "$MANIFEST" | jq -r .config.digest)"
+  config="$(echo "$manifest" | jq -r .config.digest)"
   # Alpine-packaged Node reports e.g. "26.10.0-r0"; keep only X.Y.Z
-  RT_VER="$(reg "blobs/${CONFIG_DIGEST}" | jq -r '.config.Env[]' | grep -m1 "^${RT_ENV}=" | cut -d= -f2 | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+' || true)"
-fi
+  reg "blobs/${config}" | jq -r '.config.Env[]' | grep -m1 "^${RT_ENV}=" | cut -d= -f2 | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+' || true
+}
+
+is_patched() {  # is_patched <X.Y.Z>
+  local min
+  if [ "$RUNTIME" = php ]; then
+    min="${MIN_PHP[$(echo "$1" | cut -d. -f1-2)]:-}"
+  else
+    min="${MIN_NODE[${1%%.*}]:-}"
+  fi
+  [ -n "$min" ] && version_ge "$1" "$min"
+}
+
+RT_VER=""
+[ -n "$LATEST" ] && RT_VER="$(rt_version_of "$LATEST")"
 
 if [ -z "$LATEST" ] || [ -z "$RT_VER" ]; then
   log "${NAME}: could not determine versions (current='$CURRENT' latest='$LATEST' ${RT_LABEL}='$RT_VER'); not pinging Kuma."
@@ -86,12 +100,18 @@ if [ -z "$LATEST" ] || [ -z "$RT_VER" ]; then
 fi
 
 # ==== Decide ====
-if [ "$RUNTIME" = php ]; then
-  MIN="${MIN_PHP[$(echo "$RT_VER" | cut -d. -f1-2)]:-}"
-else
-  MIN="${MIN_NODE[${RT_VER%%.*}]:-}"
+if is_patched "$RT_VER"; then PATCHED=yes; else PATCHED=no; fi
+
+# Already running a patched official release: nothing to do, whatever comes
+# out later. (Without this, every newer patched release looked like "time to
+# upgrade" — e.g. n8n 2.44.7 while 2.44.6 was already patched.)
+CUR_RT=""
+[ -n "$CURRENT" ] && CUR_RT="$(rt_version_of "$CURRENT")"
+if [ -n "$CUR_RT" ] && is_patched "$CUR_RT"; then
+  log "${NAME}: up to date: running ${CURRENT} with patched ${RT_LABEL} ${CUR_RT} (latest ${LATEST})."
+  push up "Running ${CURRENT} with patched ${RT_LABEL} ${CUR_RT}; latest ${LATEST}"
+  exit 0
 fi
-if [ -n "$MIN" ] && version_ge "$RT_VER" "$MIN"; then PATCHED=yes; else PATCHED=no; fi
 
 if [ -z "$CURRENT" ]; then
   RUNNING="a local build"

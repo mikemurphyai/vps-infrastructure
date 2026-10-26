@@ -759,6 +759,10 @@ on the VPS:
 
       Push URLs are `KUMA_UPDATE_PUSH_URL` in each app's `.env`, gitignored.
       Logs: `/var/log/<name>-update-check.log`.
+      **Fix 2026-10-26:** the script now also reads the runtime version of
+      the *current* tag and reports up ("up to date") once that's patched —
+      before, n8n 2.44.7 raised a false "time to upgrade" while 2.44.6 was
+      already on patched Node 26.12.1.
 - [x] **Upgraded Directus 12.1.1 → 12.5.1** (2026-10-26, after the
       "Update: directus" alert) — Node 22.23.4 (patched). Release notes
       12.2.0–12.5.1 reviewed: none of the breaking changes apply (Astro uses
